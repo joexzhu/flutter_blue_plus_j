@@ -353,33 +353,35 @@ public class FlutterBluePlusPlugin implements
                             return;
                         }
 
-                        ScanSettings settings;
-                        if (Build.VERSION.SDK_INT >= 26) { // Android 8.0 (August 2017)
-                            settings = new ScanSettings.Builder()
-                                .setPhy(ScanSettings.PHY_LE_ALL_SUPPORTED)
-                                .setLegacy(false)
-                                .setScanMode(scanMode)
-                                .build();
-                        } else {
-                            settings = new ScanSettings.Builder()
-                                .setScanMode(scanMode).build();
-                        }
+//                        ScanSettings settings;
+//                        if (Build.VERSION.SDK_INT >= 26) { // Android 8.0 (August 2017)
+//                            settings = new ScanSettings.Builder()
+//                                .setPhy(ScanSettings.PHY_LE_ALL_SUPPORTED)
+//                                .setLegacy(false)
+//                                .setScanMode(scanMode)
+//                                .build();
+//                        } else {
+//                            settings = new ScanSettings.Builder()
+//                                .setScanMode(scanMode).build();
+//                        }
+//
+//                        List<ScanFilter> filters = new ArrayList<>();
+//
+//                        for (int i = 0; i < macAddresses.size(); i++) {
+//                            String macAddress = macAddresses.get(i);
+//                            ScanFilter f = new ScanFilter.Builder().setDeviceAddress(macAddress).build();
+//                            filters.add(f);
+//                        }
+//
+//                        for (int i = 0; i < serviceUuids.size(); i++) {
+//                            String uuid = serviceUuids.get(i);
+//                            ScanFilter f = new ScanFilter.Builder().setServiceUuid(ParcelUuid.fromString(uuid)).build();
+//                            filters.add(f);
+//                        }
+//
+//                        scanner.startScan(filters, settings, getScanCallback());
 
-                        List<ScanFilter> filters = new ArrayList<>();
-                        
-                        for (int i = 0; i < macAddresses.size(); i++) {
-                            String macAddress = macAddresses.get(i);
-                            ScanFilter f = new ScanFilter.Builder().setDeviceAddress(macAddress).build();
-                            filters.add(f);
-                        }
-
-                        for (int i = 0; i < serviceUuids.size(); i++) {
-                            String uuid = serviceUuids.get(i);
-                            ScanFilter f = new ScanFilter.Builder().setServiceUuid(ParcelUuid.fromString(uuid)).build();
-                            filters.add(f);
-                        }
-
-                        scanner.startScan(filters, settings, getScanCallback());
+                        mBluetoothAdapter.startLeScan(getScanCallback2());
 
                         result.success(null);
                     });
@@ -388,11 +390,13 @@ public class FlutterBluePlusPlugin implements
 
                 case "stopScan":
                 {
-                    BluetoothLeScanner scanner = mBluetoothAdapter.getBluetoothLeScanner();
+//                    BluetoothLeScanner scanner = mBluetoothAdapter.getBluetoothLeScanner();
+//
+//                    if(scanner != null) {
+//                        scanner.stopScan(getScanCallback());
+//                    }
 
-                    if(scanner != null) {
-                        scanner.stopScan(getScanCallback());
-                    }
+                    mBluetoothAdapter.stopLeScan(getScanCallback2());
 
                     result.success(null);
                     break;
@@ -928,7 +932,9 @@ public class FlutterBluePlusPlugin implements
                         break;
                     }
 
-                    gatt.setPreferredPhy(txPhy, rxPhy, phyOptions);
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        gatt.setPreferredPhy(txPhy, rxPhy, phyOptions);
+                    }
 
                     result.success(null);
                     break;
@@ -1318,6 +1324,36 @@ public class FlutterBluePlusPlugin implements
             invokeMethodUIThread("OnBondStateChanged", map);
         }
     };
+
+    private BluetoothAdapter.LeScanCallback scanCallback2;
+
+    private BluetoothAdapter.LeScanCallback getScanCallback2() {
+        if(scanCallback2 == null) {
+            scanCallback2 = new BluetoothAdapter.LeScanCallback() {
+                @Override
+                public void onLeScan(BluetoothDevice device, int i, byte[] bytes) {
+                    // see BmScanResult
+                    HashMap<String, Object> rr = bmScanResult2(device);
+
+                    // see BmScanResponse
+                    HashMap<String, Object> response = new HashMap<>();
+                    response.put("result", rr);
+
+                    invokeMethodUIThread("OnScanResponse", response);
+                }
+            };
+        }
+        return  scanCallback2;
+    }
+
+    HashMap<String, Object> bmScanResult2(BluetoothDevice device) {
+        HashMap<String, Object> advertisementData = new HashMap<>();
+        HashMap<String, Object> map = new HashMap<>();
+        map.put("device", bmBluetoothDevice(device));
+        map.put("rssi", 0);
+        map.put("advertisement_data", advertisementData);
+        return map;
+    }
 
     /////////////////////////////////////////////////////////////////////////////
     // ███████   ██████   █████   ███    ██

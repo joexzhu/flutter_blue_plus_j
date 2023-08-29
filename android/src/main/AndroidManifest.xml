@@ -3,4 +3,6 @@
 <!-- But we intentionally leave this blank because android  bluetooth permissions are
      complicated and always changing. By leaving this blank, users can set exactly the 
      permissions they want, without having to 'undo' the permissions we set here -->
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
 </manifest>
