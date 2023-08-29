@@ -92,6 +92,7 @@ class BmScanSettings {
   final bool allowDuplicates;
   final int androidScanMode;
   final bool androidUsesFineLocation;
+  final bool oldApi;
 
   BmScanSettings({
     required this.serviceUuids,
@@ -99,6 +100,7 @@ class BmScanSettings {
     required this.allowDuplicates,
     required this.androidScanMode,
     required this.androidUsesFineLocation,
+    required this.oldApi,
   });
 
   Map<dynamic, dynamic> toMap() {
@@ -114,6 +116,7 @@ class BmScanSettings {
     data['allow_duplicates'] = allowDuplicates;
     data['android_scan_mode'] = androidScanMode;
     data['android_uses_fine_location'] = androidUsesFineLocation;
+    data['old_api'] = oldApi;
     return data;
   }
 }

@@ -305,7 +305,7 @@ class _FindDevicesScreenState extends State<FindDevicesScreen> {
                 child: const Icon(Icons.stop),
                 onPressed: () async {
                   try {
-                    FlutterBluePlus.stopScan();
+                    FlutterBluePlus.stopScan(oldApi: true);
                   } catch (e) {
                     final snackBar =
                         snackBarFail(prettyException("Stop Scan Error:", e));
@@ -323,7 +323,7 @@ class _FindDevicesScreenState extends State<FindDevicesScreen> {
                       if (FlutterBluePlus.isScanningNow == false) {
                         FlutterBluePlus.startScan(
                             timeout: const Duration(seconds: 15),
-                            androidUsesFineLocation: false);
+                            androidUsesFineLocation: false, oldApi: true);
                       }
                     } catch (e) {
                       final snackBar =

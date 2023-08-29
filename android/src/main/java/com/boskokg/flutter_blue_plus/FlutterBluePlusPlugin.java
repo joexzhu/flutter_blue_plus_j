@@ -325,6 +325,7 @@ public class FlutterBluePlusPlugin implements
                     boolean allowDuplicates =        (boolean) data.get("allow_duplicates");
                     int scanMode =                       (int) data.get("android_scan_mode");
                     boolean usesFineLocation =       (boolean) data.get("android_uses_fine_location");
+                    boolean oldApi =                 (boolean) data.get("old_api");
 
                     if (Build.VERSION.SDK_INT >= 31) { // Android 12 (October 2021)
                         permissions.add(Manifest.permission.BLUETOOTH_SCAN);
@@ -353,35 +354,37 @@ public class FlutterBluePlusPlugin implements
                             return;
                         }
 
-//                        ScanSettings settings;
-//                        if (Build.VERSION.SDK_INT >= 26) { // Android 8.0 (August 2017)
-//                            settings = new ScanSettings.Builder()
-//                                .setPhy(ScanSettings.PHY_LE_ALL_SUPPORTED)
-//                                .setLegacy(false)
-//                                .setScanMode(scanMode)
-//                                .build();
-//                        } else {
-//                            settings = new ScanSettings.Builder()
-//                                .setScanMode(scanMode).build();
-//                        }
-//
-//                        List<ScanFilter> filters = new ArrayList<>();
-//
-//                        for (int i = 0; i < macAddresses.size(); i++) {
-//                            String macAddress = macAddresses.get(i);
-//                            ScanFilter f = new ScanFilter.Builder().setDeviceAddress(macAddress).build();
-//                            filters.add(f);
-//                        }
-//
-//                        for (int i = 0; i < serviceUuids.size(); i++) {
-//                            String uuid = serviceUuids.get(i);
-//                            ScanFilter f = new ScanFilter.Builder().setServiceUuid(ParcelUuid.fromString(uuid)).build();
-//                            filters.add(f);
-//                        }
-//
-//                        scanner.startScan(filters, settings, getScanCallback());
+                        if(oldApi) {
+                            mBluetoothAdapter.startLeScan(getScanCallback2());
+                        } else {
+                            ScanSettings settings;
+                            if (Build.VERSION.SDK_INT >= 26) { // Android 8.0 (August 2017)
+                                settings = new ScanSettings.Builder()
+                                        .setPhy(ScanSettings.PHY_LE_ALL_SUPPORTED)
+                                        .setLegacy(false)
+                                        .setScanMode(scanMode)
+                                        .build();
+                            } else {
+                                settings = new ScanSettings.Builder()
+                                        .setScanMode(scanMode).build();
+                            }
 
-                        mBluetoothAdapter.startLeScan(getScanCallback2());
+                            List<ScanFilter> filters = new ArrayList<>();
+
+                            for (int i = 0; i < macAddresses.size(); i++) {
+                                String macAddress = macAddresses.get(i);
+                                ScanFilter f = new ScanFilter.Builder().setDeviceAddress(macAddress).build();
+                                filters.add(f);
+                            }
+
+                            for (int i = 0; i < serviceUuids.size(); i++) {
+                                String uuid = serviceUuids.get(i);
+                                ScanFilter f = new ScanFilter.Builder().setServiceUuid(ParcelUuid.fromString(uuid)).build();
+                                filters.add(f);
+                            }
+
+                            scanner.startScan(filters, settings, getScanCallback());
+                        }
 
                         result.success(null);
                     });
@@ -390,13 +393,17 @@ public class FlutterBluePlusPlugin implements
 
                 case "stopScan":
                 {
-//                    BluetoothLeScanner scanner = mBluetoothAdapter.getBluetoothLeScanner();
-//
-//                    if(scanner != null) {
-//                        scanner.stopScan(getScanCallback());
-//                    }
+                    HashMap<String, Object> data = call.arguments();
+                    boolean oldApi =                 (boolean) data.get("old_api");
+                    if(oldApi) {
+                        mBluetoothAdapter.stopLeScan(getScanCallback2());
+                    } else {
+                        BluetoothLeScanner scanner = mBluetoothAdapter.getBluetoothLeScanner();
 
-                    mBluetoothAdapter.stopLeScan(getScanCallback2());
+                        if(scanner != null) {
+                            scanner.stopScan(getScanCallback());
+                        }
+                    }
 
                     result.success(null);
                     break;

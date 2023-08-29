@@ -134,6 +134,7 @@ class FlutterBluePlus {
     Duration? timeout,
     bool allowDuplicates = false,
     bool androidUsesFineLocation = false,
+    bool oldApi = false,
   }) async* {
     try {
       var settings = BmScanSettings(
@@ -141,7 +142,8 @@ class FlutterBluePlus {
           macAddresses: macAddresses,
           allowDuplicates: allowDuplicates,
           androidScanMode: scanMode.value,
-          androidUsesFineLocation: androidUsesFineLocation);
+          androidUsesFineLocation: androidUsesFineLocation,
+          oldApi: oldApi);
 
       if (_isScanning.value == true) {
         throw FlutterBluePlusException(
@@ -171,7 +173,7 @@ class FlutterBluePlus {
         _scanTimeout = Timer(timeout, () {
           _scanResponseBuffer?.close();
           _isScanning.add(false);
-          _invokeMethod('stopScan');
+          _invokeMethod('stopScan', {'old_api': oldApi});
         });
       }
 
@@ -218,6 +220,7 @@ class FlutterBluePlus {
     Duration? timeout,
     bool allowDuplicates = false,
     bool androidUsesFineLocation = false,
+    bool oldApi = false,
   }) async {
     await scan(
             scanMode: scanMode,
@@ -225,14 +228,15 @@ class FlutterBluePlus {
             macAddresses: macAddresses,
             timeout: timeout,
             allowDuplicates: allowDuplicates,
-            androidUsesFineLocation: androidUsesFineLocation)
+            androidUsesFineLocation: androidUsesFineLocation,
+            oldApi: oldApi)
         .drain();
     return _scanResultsList.value;
   }
 
   /// Stops a scan for Bluetooth Low Energy devices
-  static Future stopScan() async {
-    await _invokeMethod('stopScan');
+  static Future stopScan({bool oldApi = false}) async {
+    await _invokeMethod('stopScan', {'old_api': oldApi});
     _scanResponseBuffer?.close();
     _scanTimeout?.cancel();
     _isScanning.add(false);
