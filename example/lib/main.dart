@@ -305,7 +305,9 @@ class _FindDevicesScreenState extends State<FindDevicesScreen> {
                 child: const Icon(Icons.stop),
                 onPressed: () async {
                   try {
-                    FlutterBluePlus.stopScan(oldApi: true);
+                    final hos = await FlutterBluePlus.isHarmonyOS();
+                    print('hos:$hos');
+                    FlutterBluePlus.stopScan(oldApi: hos);
                   } catch (e) {
                     final snackBar =
                         snackBarFail(prettyException("Stop Scan Error:", e));
@@ -321,9 +323,13 @@ class _FindDevicesScreenState extends State<FindDevicesScreen> {
                   onPressed: () async {
                     try {
                       if (FlutterBluePlus.isScanningNow == false) {
+                        final hos = await FlutterBluePlus.isHarmonyOS();
+                        print('hos:$hos');
                         FlutterBluePlus.startScan(
-                            timeout: const Duration(seconds: 15),
-                            androidUsesFineLocation: false, oldApi: true);
+                          timeout: const Duration(seconds: 15),
+                          androidUsesFineLocation: false,
+                          oldApi: hos,
+                        );
                       }
                     } catch (e) {
                       final snackBar =

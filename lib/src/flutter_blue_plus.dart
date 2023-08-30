@@ -249,6 +249,11 @@ class FlutterBluePlus {
     _logColor = color;
   }
 
+  static Future<bool> isHarmonyOS() async {
+    final ret = await _invokeMethod('isHarmonyOS', {});
+    return ret;
+  }
+
   static Future<dynamic> _methodCallHandler(MethodCall call) async {
     // log result
     if (logLevel == LogLevel.verbose) {

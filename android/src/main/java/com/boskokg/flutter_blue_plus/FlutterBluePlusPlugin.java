@@ -177,6 +177,8 @@ public class FlutterBluePlusPlugin implements
         activityBinding = null;
     }
 
+    private static final String HARMONY_OS = "harmony";
+
     ////////////////////////////////////////////////////////////
     // ███    ███  ███████  ████████  ██   ██   ██████   ██████
     // ████  ████  ██          ██     ██   ██  ██    ██  ██   ██
@@ -216,6 +218,36 @@ public class FlutterBluePlusPlugin implements
             }
 
             switch (call.method) {
+                case "isHarmonyOS":
+                {
+                    try {
+                        Class clz = Class.forName("com.huawei.system.BuildEx");
+                        Method method = clz.getMethod("getOsBrand");
+
+                        ClassLoader classLoader = clz.getClassLoader();
+
+                        //如果BuildEx为系统提供的，其classloader为BootClassLoader
+                        //如果BuildEx为伪造的，其classloader一般为PathClassLoader
+                        System.out.println("classLoader: " + classLoader);
+
+                        //BootClassLoader的parent为null
+                        if (classLoader != null && classLoader.getParent() == null) {
+                            Object os = method.invoke(clz);
+                            System.out.println("getOsBrand: " + os);
+                            if(os != null) {
+                                boolean ret = HARMONY_OS.equalsIgnoreCase(os.toString());
+                                System.out.println("getOsBrand ret: " + ret);
+                                result.success(ret);
+                                return;
+                            }
+                        }
+                    } catch (ClassNotFoundException e) {
+                    } catch (NoSuchMethodException e) {
+                    } catch (Exception e) {
+                    }
+                    result.success(false);
+                    return;
+                }
 
                 case "setLogLevel":
                 {
