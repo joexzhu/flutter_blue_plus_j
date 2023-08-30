@@ -1,3 +1,6 @@
+## 1.14.12
+harmony
+
 ## 1.14.11
 * **[Deprecate]** dart: isDiscoveringServices & servicesStream. They can be easily implemented yourself
 
