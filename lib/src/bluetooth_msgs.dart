@@ -1,4 +1,4 @@
-part of flutter_blue_plus;
+part of flutter_blue_plus_harmony;
 
 enum BmAdapterStateEnum {
   unknown, // 0

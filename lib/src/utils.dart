@@ -1,4 +1,4 @@
-part of flutter_blue_plus;
+part of flutter_blue_plus_harmony;
 
 String _hexEncode(List<int> numbers) {
   return numbers.map((n) => (n & 0xFF).toRadixString(16).padLeft(2, '0')).join();
