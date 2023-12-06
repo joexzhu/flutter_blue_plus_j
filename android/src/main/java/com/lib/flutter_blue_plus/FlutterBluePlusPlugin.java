@@ -93,6 +93,7 @@ public class FlutterBluePlusPlugin implements
     private BluetoothManager mBluetoothManager;
     private BluetoothAdapter mBluetoothAdapter;
     private boolean mIsScanning = false;
+    private boolean mOldApi = false;
 
     private FlutterPluginBinding pluginBinding;
     private ActivityPluginBinding activityBinding;
@@ -200,10 +201,15 @@ public class FlutterBluePlusPlugin implements
 
         // stop scanning
         if (mBluetoothAdapter != null && mIsScanning) {
-            BluetoothLeScanner scanner = mBluetoothAdapter.getBluetoothLeScanner();
-            if (scanner != null) {
-                scanner.stopScan(getScanCallback());
+            if (mOldApi) {
+                mBluetoothAdapter.stopLeScan(getScanCallback2());
                 mIsScanning = false;
+            } else {
+                BluetoothLeScanner scanner = mBluetoothAdapter.getBluetoothLeScanner();
+                if (scanner != null) {
+                    scanner.stopScan(getScanCallback());
+                    mIsScanning = false;
+                }
             }
         }
 
@@ -251,6 +257,8 @@ public class FlutterBluePlusPlugin implements
         activityBinding = null;
     }
 
+    private static final String HARMONY_OS = "harmony";
+
     ////////////////////////////////////////////////////////////
     // ███    ███  ███████  ████████  ██   ██   ██████   ██████
     // ████  ████  ██          ██     ██   ██  ██    ██  ██   ██
@@ -293,6 +301,36 @@ public class FlutterBluePlusPlugin implements
             }
 
             switch (call.method) {
+                case "isHarmonyOS":
+                {
+                    try {
+                        Class clz = Class.forName("com.huawei.system.BuildEx");
+                        Method method = clz.getMethod("getOsBrand");
+
+                        ClassLoader classLoader = clz.getClassLoader();
+
+                        //如果BuildEx为系统提供的，其classloader为BootClassLoader
+                        //如果BuildEx为伪造的，其classloader一般为PathClassLoader
+                        System.out.println("classLoader: " + classLoader);
+
+                        //BootClassLoader的parent为null
+                        if (classLoader != null && classLoader.getParent() == null) {
+                            Object os = method.invoke(clz);
+                            System.out.println("getOsBrand: " + os);
+                            if(os != null) {
+                                boolean ret = HARMONY_OS.equalsIgnoreCase(os.toString());
+                                System.out.println("getOsBrand ret: " + ret);
+                                result.success(ret);
+                                return;
+                            }
+                        }
+                    } catch (ClassNotFoundException e) {
+                    } catch (NoSuchMethodException e) {
+                    } catch (Exception e) {
+                    }
+                    result.success(false);
+                    return;
+                }
 
                 case "flutterHotRestart":
                 {
@@ -303,10 +341,15 @@ public class FlutterBluePlusPlugin implements
                     }
 
                     // stop scanning
-                    BluetoothLeScanner scanner = mBluetoothAdapter.getBluetoothLeScanner();
-                    if(scanner != null && mIsScanning) {
-                        scanner.stopScan(getScanCallback());
+                    if (mOldApi) {
+                        mBluetoothAdapter.stopLeScan(getScanCallback2());
                         mIsScanning = false;
+                    } else {
+                        BluetoothLeScanner scanner = mBluetoothAdapter.getBluetoothLeScanner();
+                        if (scanner != null && mIsScanning) {
+                            scanner.stopScan(getScanCallback());
+                            mIsScanning = false;
+                        }
                     }
 
                     disconnectAllDevices("flutterHotRestart");
@@ -463,6 +506,7 @@ public class FlutterBluePlusPlugin implements
                     boolean continuousUpdates =         (boolean) data.get("continuous_updates");
                     int androidScanMode =                   (int) data.get("android_scan_mode");
                     boolean androidUsesFineLocation =   (boolean) data.get("android_uses_fine_location");
+                    boolean oldApi =                    (boolean) data.get("old_api");
 
                     ArrayList<String> permissions = new ArrayList<>();
 
@@ -501,90 +545,103 @@ public class FlutterBluePlusPlugin implements
                             return;
                         }
 
-                        // build scan settings
-                        ScanSettings.Builder builder = new ScanSettings.Builder();
-                        builder.setScanMode(androidScanMode);
-                        if (Build.VERSION.SDK_INT >= 26) { // Android 8.0 (August 2017)
-                            builder.setPhy(ScanSettings.PHY_LE_ALL_SUPPORTED);
-                            builder.setLegacy(false);
-                        }
-                        ScanSettings settings = builder.build();
-                        
-                        // set filters
-                        List<ScanFilter> filters = new ArrayList<>();
+                        if (oldApi) {
+                            // remember for later
+                            mScanFilters = data;
 
-                        // services
-                        for (int i = 0; i < withServices.size(); i++) {
-                            ParcelUuid s = ParcelUuid.fromString(uuid128(withServices.get(i)));
-                            ScanFilter f = new ScanFilter.Builder().setServiceUuid(s).build();
-                            filters.add(f);
-                        }
-                        
-                        // remoteIds
-                        for (int i = 0; i < withRemoteIds.size(); i++) {
-                            String address = withRemoteIds.get(i);
-                            ScanFilter f = new ScanFilter.Builder().setDeviceAddress(address).build();
-                            filters.add(f);
-                        }
+                            // clear seen devices
+                            mAdvSeen.clear();
+                            mScanCounts.clear();
 
-                        // names
-                        for (int i = 0; i < withNames.size(); i++) {
-                            String name = withNames.get(i);
-                            ScanFilter f = new ScanFilter.Builder().setDeviceName(name).build();
-                            filters.add(f);
-                        }
-
-                        // keywords
-                        if (Build.VERSION.SDK_INT >= 33) { // Android 13 (August 2022)
-                            if (withKeywords.size() > 0) {
-                                // device must advertise a name
-                                int a1 = ScanRecord.DATA_TYPE_LOCAL_NAME_SHORT;
-                                int a2 = ScanRecord.DATA_TYPE_LOCAL_NAME_COMPLETE;
-                                ScanFilter f1 = new ScanFilter.Builder().setAdvertisingDataType(a1).build();
-                                ScanFilter f2 = new ScanFilter.Builder().setAdvertisingDataType(a2).build();
-                                filters.add(f1);
-                                filters.add(f2);
+                            mOldApi = true;
+                            mBluetoothAdapter.startLeScan(getScanCallback2());
+                        } else {
+                            // build scan settings
+                            ScanSettings.Builder builder = new ScanSettings.Builder();
+                            builder.setScanMode(androidScanMode);
+                            if (Build.VERSION.SDK_INT >= 26) { // Android 8.0 (August 2017)
+                                builder.setPhy(ScanSettings.PHY_LE_ALL_SUPPORTED);
+                                builder.setLegacy(false);
                             }
-                        }
+                            ScanSettings settings = builder.build();
 
-                        // msd
-                        for (int i = 0; i < withMsd.size(); i++) {
-                            HashMap<String, Object> m = (HashMap<String, Object>) withMsd.get(i);
-                            int id =                    (int) m.get("manufacturer_id");
-                            byte[] mdata = hexToBytes((String) m.get("data"));
-                            byte[] mask =  hexToBytes((String) m.get("mask"));
-                            ScanFilter f = null;
-                            if (mask.length == 0) {
-                                f = new ScanFilter.Builder().setManufacturerData(id, mdata).build();
-                            } else {
-                                f = new ScanFilter.Builder().setManufacturerData(id, mdata, mask).build();
+                            // set filters
+                            List<ScanFilter> filters = new ArrayList<>();
+
+                            // services
+                            for (int i = 0; i < withServices.size(); i++) {
+                                ParcelUuid s = ParcelUuid.fromString(uuid128(withServices.get(i)));
+                                ScanFilter f = new ScanFilter.Builder().setServiceUuid(s).build();
+                                filters.add(f);
                             }
-                            filters.add(f);
-                        }
 
-                        // service data
-                        for (int i = 0; i < withServiceData.size(); i++) {
-                            HashMap<String, Object> m = (HashMap<String, Object>) withServiceData.get(i);
-                            ParcelUuid s = ParcelUuid.fromString((String) m.get("service"));
-                            byte[] mdata =             hexToBytes((String) m.get("data"));
-                            byte[] mask =              hexToBytes((String) m.get("mask"));
-                            ScanFilter f = null;
-                            if (mask.length == 0) {
-                                f = new ScanFilter.Builder().setServiceData(s, mdata).build();
-                            } else {
-                                f = new ScanFilter.Builder().setServiceData(s, mdata, mask).build();
+                            // remoteIds
+                            for (int i = 0; i < withRemoteIds.size(); i++) {
+                                String address = withRemoteIds.get(i);
+                                ScanFilter f = new ScanFilter.Builder().setDeviceAddress(address).build();
+                                filters.add(f);
                             }
-                            filters.add(f);
+
+                            // names
+                            for (int i = 0; i < withNames.size(); i++) {
+                                String name = withNames.get(i);
+                                ScanFilter f = new ScanFilter.Builder().setDeviceName(name).build();
+                                filters.add(f);
+                            }
+
+                            // keywords
+                            if (Build.VERSION.SDK_INT >= 33) { // Android 13 (August 2022)
+                                if (withKeywords.size() > 0) {
+                                    // device must advertise a name
+                                    int a1 = ScanRecord.DATA_TYPE_LOCAL_NAME_SHORT;
+                                    int a2 = ScanRecord.DATA_TYPE_LOCAL_NAME_COMPLETE;
+                                    ScanFilter f1 = new ScanFilter.Builder().setAdvertisingDataType(a1).build();
+                                    ScanFilter f2 = new ScanFilter.Builder().setAdvertisingDataType(a2).build();
+                                    filters.add(f1);
+                                    filters.add(f2);
+                                }
+                            }
+
+                            // msd
+                            for (int i = 0; i < withMsd.size(); i++) {
+                                HashMap<String, Object> m = (HashMap<String, Object>) withMsd.get(i);
+                                int id = (int) m.get("manufacturer_id");
+                                byte[] mdata = hexToBytes((String) m.get("data"));
+                                byte[] mask = hexToBytes((String) m.get("mask"));
+                                ScanFilter f = null;
+                                if (mask.length == 0) {
+                                    f = new ScanFilter.Builder().setManufacturerData(id, mdata).build();
+                                } else {
+                                    f = new ScanFilter.Builder().setManufacturerData(id, mdata, mask).build();
+                                }
+                                filters.add(f);
+                            }
+
+                            // service data
+                            for (int i = 0; i < withServiceData.size(); i++) {
+                                HashMap<String, Object> m = (HashMap<String, Object>) withServiceData.get(i);
+                                ParcelUuid s = ParcelUuid.fromString((String) m.get("service"));
+                                byte[] mdata = hexToBytes((String) m.get("data"));
+                                byte[] mask = hexToBytes((String) m.get("mask"));
+                                ScanFilter f = null;
+                                if (mask.length == 0) {
+                                    f = new ScanFilter.Builder().setServiceData(s, mdata).build();
+                                } else {
+                                    f = new ScanFilter.Builder().setServiceData(s, mdata, mask).build();
+                                }
+                                filters.add(f);
+                            }
+
+                            // remember for later
+                            mScanFilters = data;
+
+                            // clear seen devices
+                            mAdvSeen.clear();
+                            mScanCounts.clear();
+
+                            mOldApi = false;
+                            scanner.startScan(filters, settings, getScanCallback());
                         }
-
-                        // remember for later
-                        mScanFilters = data;
-
-                        // clear seen devices
-                        mAdvSeen.clear();
-                        mScanCounts.clear();
-
-                        scanner.startScan(filters, settings, getScanCallback());
 
                         mIsScanning = true;
 
@@ -595,11 +652,16 @@ public class FlutterBluePlusPlugin implements
 
                 case "stopScan":
                 {
-                    BluetoothLeScanner scanner = mBluetoothAdapter.getBluetoothLeScanner();
-
-                    if(scanner != null) {
-                        scanner.stopScan(getScanCallback());
+                    if (mOldApi){
+                        mBluetoothAdapter.stopLeScan(getScanCallback2());
                         mIsScanning = false;
+                    } else {
+                        BluetoothLeScanner scanner = mBluetoothAdapter.getBluetoothLeScanner();
+
+                        if (scanner != null) {
+                            scanner.stopScan(getScanCallback());
+                            mIsScanning = false;
+                        }
                     }
 
                     result.success(true);
@@ -1908,6 +1970,36 @@ public class FlutterBluePlusPlugin implements
             };
         }
         return scanCallback;
+    }
+
+    private BluetoothAdapter.LeScanCallback scanCallback2;
+
+    private BluetoothAdapter.LeScanCallback getScanCallback2() {
+        if (scanCallback2 == null) {
+            scanCallback2 = new BluetoothAdapter.LeScanCallback() {
+                @Override
+                public void onLeScan(BluetoothDevice device, int i, byte[] bytes) {
+                    // see BmScanResponse
+                    HashMap<String, Object> response = new HashMap<>();
+                    response.put("advertisements", Arrays.asList(bmScanAdvertisement2(device)));
+
+                    invokeMethodUIThread("OnScanResponse", response);
+                }
+            };
+        }
+        return scanCallback2;
+    }
+
+    HashMap<String, Object> bmScanAdvertisement2(BluetoothDevice device) {
+        boolean connectable = true;
+
+        // See: BmScanAdvertisement
+        // perf: only add keys if they exists
+        HashMap<String, Object> map = new HashMap<>();
+        if (device.getAddress() != null) {map.put("remote_id", device.getAddress());}
+        if (device.getName() != null)    {map.put("platform_name", device.getName());}
+        if (connectable)                 {map.put("connectable", 1);}
+        return map;
     }
 
     /////////////////////////////////////////////////////////////////////////////

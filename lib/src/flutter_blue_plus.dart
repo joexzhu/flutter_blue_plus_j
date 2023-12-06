@@ -184,6 +184,11 @@ class FlutterBluePlus {
     return response.devices.map((d) => BluetoothDevice.fromProto(d)).toList();
   }
 
+  static Future<bool> isHarmonyOS() async {
+    final ret = await _invokeMethod('isHarmonyOS', {});
+    return ret;
+  }
+
   /// Start a scan, and return a stream of results
   ///   - [withServices] filter by advertised services
   ///   - [withRemoteIds] filter for known remoteIds (iOS: 128-bit guid, android: 48-bit mac address)
@@ -217,6 +222,7 @@ class FlutterBluePlus {
     bool oneByOne = false,
     AndroidScanMode androidScanMode = AndroidScanMode.lowLatency,
     bool androidUsesFineLocation = false,
+    bool oldApi = false,
   }) async {
     // check args
     assert(removeIfGone == null || continuousUpdates, "removeIfGone requires continuousUpdates");
@@ -242,7 +248,8 @@ class FlutterBluePlus {
         continuousUpdates: continuousUpdates,
         continuousDivisor: continuousDivisor,
         androidScanMode: androidScanMode.value,
-        androidUsesFineLocation: androidUsesFineLocation);
+        androidUsesFineLocation: androidUsesFineLocation,
+        oldApi: oldApi);
 
     Stream<BmScanResponse> responseStream = FlutterBluePlus._methodStream.stream
         .where((m) => m.method == "OnScanResponse")

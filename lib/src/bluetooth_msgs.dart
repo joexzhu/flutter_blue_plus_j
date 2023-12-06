@@ -67,6 +67,7 @@ class BmScanSettings {
   final int continuousDivisor;
   final int androidScanMode;
   final bool androidUsesFineLocation;
+  final bool oldApi;
 
   BmScanSettings({
     required this.withServices,
@@ -79,6 +80,7 @@ class BmScanSettings {
     required this.continuousDivisor,
     required this.androidScanMode,
     required this.androidUsesFineLocation,
+    required this.oldApi,
   });
 
   Map<dynamic, dynamic> toMap() {
@@ -93,6 +95,7 @@ class BmScanSettings {
     data['continuous_divisor'] = continuousDivisor;
     data['android_scan_mode'] = androidScanMode;
     data['android_uses_fine_location'] = androidUsesFineLocation;
+    data['old_api'] = oldApi;
     return data;
   }
 }
