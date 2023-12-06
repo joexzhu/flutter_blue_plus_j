@@ -1,7 +1,7 @@
-name: flutter_blue_plus
+name: flutter_blue_plus_harmony
 description: Flutter plugin for connecting and communicationg with Bluetooth Low Energy devices, on Android, iOS, and MacOS.
 version: 1.30.3
-homepage: https://github.com/boskokg/flutter_blue_plus
+homepage: https://github.com/xxzj990/flutter_blue_plus
 
 environment:
   sdk: ">=2.15.1 <4.0.0"

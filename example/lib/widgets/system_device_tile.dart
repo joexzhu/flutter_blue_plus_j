@@ -3,7 +3,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter_blue_plus/flutter_blue_plus.dart';
+import 'package:flutter_blue_plus_harmony/flutter_blue_plus_harmony.dart';
 
 class SystemDeviceTile extends StatefulWidget {
   final BluetoothDevice device;
