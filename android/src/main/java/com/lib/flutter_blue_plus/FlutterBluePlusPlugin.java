@@ -704,9 +704,9 @@ public class FlutterBluePlusPlugin implements
                 case "connect":
                 {
                     // see: BmConnectRequest
-                    HashMap<String, Object> data = call.arguments();
-                    String remoteId =    (String) data.get("remote_id");
-                    String serviceUuid = (String) data.get("service_uuid");
+                    HashMap<String, Object> args = call.arguments();
+                    String remoteId =    (String) args.get("remote_id");
+                    boolean autoConnect = ((int) args.get("auto_connect")) != 0;
 
                     ArrayList<String> permissions = new ArrayList<>();
 
@@ -747,7 +747,6 @@ public class FlutterBluePlusPlugin implements
 
                         // connect
                         BluetoothGatt gatt = null;
-                        boolean autoConnect = mAutoConnected.containsKey(remoteId);
                         BluetoothDevice device = mBluetoothAdapter.getRemoteDevice(remoteId);
                         if (Build.VERSION.SDK_INT >= 23) { // Android 6.0 (October 2015)
                             gatt = device.connectGatt(context, autoConnect, mGattCallback, BluetoothDevice.TRANSPORT_LE);
@@ -763,6 +762,13 @@ public class FlutterBluePlusPlugin implements
 
                         // add to currently connecting peripherals
                         mCurrentlyConnectingDevices.put(remoteId, gatt);
+
+                        // remember autoconnect 
+                        if (autoConnect) {
+                            mAutoConnected.put(remoteId, autoConnect);
+                        } else {
+                            mAutoConnected.remove(remoteId);
+                        }
 
                         result.success(true);
                     });
@@ -2020,9 +2026,8 @@ public class FlutterBluePlusPlugin implements
         @Override
         public void onConnectionStateChange(BluetoothGatt gatt, int status, int newState)
         {
-            log(LogLevel.DEBUG, "onConnectionStateChange: status: " + status +
-                " (" + hciStatusString(status) + ")" +
-                " newState: " + connectionStateString(newState));
+            log(LogLevel.DEBUG, "onConnectionStateChange:" + connectionStateString(newState));
+            log(LogLevel.DEBUG, "  status: " + hciStatusString(status));
 
             // android never uses this callback with enums values of CONNECTING or DISCONNECTING,
             // (theyre only used for gatt.getConnectionState()), but just to be
@@ -2082,7 +2087,10 @@ public class FlutterBluePlusPlugin implements
         @Override
         public void onServicesDiscovered(BluetoothGatt gatt, int status)
         {
-            log(LogLevel.DEBUG, "onServicesDiscovered: count: " + gatt.getServices().size() + " status: " + status);
+            LogLevel level = status == 0 ? LogLevel.DEBUG : LogLevel.ERROR;
+            log(level, "onServicesDiscovered:");
+            log(level, "  count: " + gatt.getServices().size());
+            log(level, "  status: " + status + gattErrorString(status));
 
             List<Object> services = new ArrayList<Object>();
             for(BluetoothGattService s : gatt.getServices()) {
@@ -2136,7 +2144,9 @@ public class FlutterBluePlusPlugin implements
         public void onCharacteristicChanged(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic, byte[] value)
         {
             // this callback is only for notifications & indications
-            log(LogLevel.DEBUG, "onCharacteristicChanged: " + uuidStr(characteristic.getUuid()));
+            LogLevel level = LogLevel.DEBUG;
+            log(level, "onCharacteristicChanged:");
+            log(level, "  chr: " + uuidStr(characteristic.getUuid()));
             onCharacteristicReceived(gatt, characteristic, value, BluetoothGatt.GATT_SUCCESS);
         }
 
@@ -2145,14 +2155,20 @@ public class FlutterBluePlusPlugin implements
         public void onCharacteristicRead(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic, byte[] value, int status)
         {
             // this callback is only for explicit characteristic reads
-            log(LogLevel.DEBUG, "onCharacteristicRead: " + uuidStr(characteristic.getUuid()) + " status: " + status);
+            LogLevel level = status == 0 ? LogLevel.DEBUG : LogLevel.ERROR;
+            log(level, "onCharacteristicRead:");
+            log(level, "  chr: " + uuidStr(characteristic.getUuid()));
+            log(level, "  status: " + gattErrorString(status) + " (" + status + ")");
             onCharacteristicReceived(gatt, characteristic, value, BluetoothGatt.GATT_SUCCESS);
         }
 
         @Override
         public void onCharacteristicWrite(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic, int status)
         {
-            log(LogLevel.DEBUG, "onCharacteristicWrite: " + uuidStr(characteristic.getUuid()) + " status: " + status);
+            LogLevel level = status == 0 ? LogLevel.DEBUG : LogLevel.ERROR;
+            log(level, "onCharacteristicWrite:");
+            log(level, "  chr: " + uuidStr(characteristic.getUuid()));
+            log(level, "  status: " + gattErrorString(status) + " (" + status + ")");
 
             // For "writeWithResponse", onCharacteristicWrite is called after the remote sends back a write response. 
             // For "writeWithoutResponse", onCharacteristicWrite is called as long as there is still space left 
@@ -2192,7 +2208,11 @@ public class FlutterBluePlusPlugin implements
         @TargetApi(33) // newer function, passes byte[] value
         public void onDescriptorRead(BluetoothGatt gatt, BluetoothGattDescriptor descriptor, int status, byte[] value)
         {
-            log(LogLevel.DEBUG, "onDescriptorRead: " + uuidStr(descriptor.getUuid()) + " status: " + status);
+            LogLevel level = status == 0 ? LogLevel.DEBUG : LogLevel.ERROR;
+            log(level, "onDescriptorRead:");
+            log(level, "  chr: " + uuidStr(descriptor.getCharacteristic().getUuid()));
+            log(level, "  desc: " + uuidStr(descriptor.getUuid()));
+            log(level, "  status: " + gattErrorString(status) + " (" + status + ")");
 
             ServicePair pair = getServicePair(gatt, descriptor.getCharacteristic());
 
@@ -2216,7 +2236,11 @@ public class FlutterBluePlusPlugin implements
         @Override
         public void onDescriptorWrite(BluetoothGatt gatt, BluetoothGattDescriptor descriptor, int status)
         {
-            log(LogLevel.DEBUG, "onDescriptorWrite: " + uuidStr(descriptor.getUuid()) + " status: " + status);
+            LogLevel level = status == 0 ? LogLevel.DEBUG : LogLevel.ERROR;
+            log(level, "onDescriptorWrite:");
+            log(level, "  chr: " + uuidStr(descriptor.getCharacteristic().getUuid()));
+            log(level, "  desc: " + uuidStr(descriptor.getUuid()));
+            log(level, "  status: " + gattErrorString(status) + " (" + status + ")");
 
             ServicePair pair = getServicePair(gatt, descriptor.getCharacteristic());
 
@@ -2252,13 +2276,18 @@ public class FlutterBluePlusPlugin implements
         @Override
         public void onReliableWriteCompleted(BluetoothGatt gatt, int status)
         {
-            log(LogLevel.DEBUG, "onReliableWriteCompleted: status: " + status);
+            LogLevel level = status == 0 ? LogLevel.DEBUG : LogLevel.ERROR;
+            log(level, "onReliableWriteCompleted:");
+            log(level, "  status: " + gattErrorString(status) + " (" + status + ")");
         }
 
         @Override
         public void onReadRemoteRssi(BluetoothGatt gatt, int rssi, int status)
         {
-            log(LogLevel.DEBUG, "onReadRemoteRssi: rssi: " + rssi + " status: " + status);
+            LogLevel level = status == 0 ? LogLevel.DEBUG : LogLevel.ERROR;
+            log(level, "onReadRemoteRssi:");
+            log(level, "  rssi: " + rssi);
+            log(level, "  status: " + gattErrorString(status) + " (" + status + ")");
 
             // see: BmReadRssiResult
             HashMap<String, Object> response = new HashMap<>();
@@ -2274,7 +2303,10 @@ public class FlutterBluePlusPlugin implements
         @Override
         public void onMtuChanged(BluetoothGatt gatt, int mtu, int status)
         {
-            log(LogLevel.DEBUG, "onMtuChanged: mtu: " + mtu + " status: " + status);
+            LogLevel level = status == 0 ? LogLevel.DEBUG : LogLevel.ERROR;
+            log(level, "onMtuChanged:");
+            log(level, "  mtu: " + mtu );
+            log(level, "  status: " + gattErrorString(status) + " (" + status + ")");
 
             String remoteId = gatt.getDevice().getAddress();
 
@@ -2297,8 +2329,8 @@ public class FlutterBluePlusPlugin implements
         public void onCharacteristicChanged(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic)
         {
             // getValue() was deprecated in API level 33 because the function makes it look like
-            // you could always call getValue on a characteristic. But in reality, this
-            // only works after a *read* has been made
+            // you could always call getValue on a characteristic. But in reality, getValue()
+            // only works after a *read* has been made, not a *write*.
             this.onCharacteristicChanged(gatt, characteristic, characteristic.getValue());
         }
         
@@ -2307,8 +2339,8 @@ public class FlutterBluePlusPlugin implements
         public void onCharacteristicRead(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic, int status)
         {
             // getValue() was deprecated in API level 33 because the function makes it look like
-            // you could always call getValue on a characteristic. But in reality, this
-            // only works after a *read* has been made
+            // you could always call getValue on a characteristic. But in reality, getValue()
+            // only works after a *read* has been made, not a *write*.
             this.onCharacteristicRead(gatt, characteristic, characteristic.getValue(), status);
         }
 
@@ -2317,7 +2349,7 @@ public class FlutterBluePlusPlugin implements
         public void onDescriptorRead(BluetoothGatt gatt, BluetoothGattDescriptor descriptor, int status)
         {
             // getValue() was deprecated in API level 33 because the api makes it look like
-            // you could always call getValue on a descriptor. But in reality, this
+            // you could always call getValue on a descriptor. But in reality, getValue()
             // only works after a *read* has been made, not a *write*.
             this.onDescriptorRead(gatt, descriptor, status, descriptor.getValue());
         }
@@ -2660,19 +2692,29 @@ public class FlutterBluePlusPlugin implements
         }
     }
 
+    // Defined in the Bluetooth Standard
     private static String gattErrorString(int value) {
         switch(value) {
-            case BluetoothGatt.GATT_SUCCESS                     : return "GATT_SUCCESS";
-            case BluetoothGatt.GATT_CONNECTION_CONGESTED        : return "GATT_CONNECTION_CONGESTED";
-            case BluetoothGatt.GATT_FAILURE                     : return "GATT_FAILURE";
-            case BluetoothGatt.GATT_INSUFFICIENT_AUTHENTICATION : return "GATT_INSUFFICIENT_AUTHENTICATION";
-            case BluetoothGatt.GATT_INSUFFICIENT_AUTHORIZATION  : return "GATT_INSUFFICIENT_AUTHORIZATION";
-            case BluetoothGatt.GATT_INSUFFICIENT_ENCRYPTION     : return "GATT_INSUFFICIENT_ENCRYPTION";
-            case BluetoothGatt.GATT_INVALID_ATTRIBUTE_LENGTH    : return "GATT_INVALID_ATTRIBUTE_LENGTH";
-            case BluetoothGatt.GATT_INVALID_OFFSET              : return "GATT_INVALID_OFFSET";
-            case BluetoothGatt.GATT_READ_NOT_PERMITTED          : return "GATT_READ_NOT_PERMITTED";
-            case BluetoothGatt.GATT_REQUEST_NOT_SUPPORTED       : return "GATT_REQUEST_NOT_SUPPORTED";
-            case BluetoothGatt.GATT_WRITE_NOT_PERMITTED         : return "GATT_WRITE_NOT_PERMITTED";
+            case BluetoothGatt.GATT_SUCCESS                     : return "GATT_SUCCESS";                     // 0
+            case 0x01                                           : return "GATT_INVALID_HANDLE";              // 1
+            case BluetoothGatt.GATT_READ_NOT_PERMITTED          : return "GATT_READ_NOT_PERMITTED";          // 2
+            case BluetoothGatt.GATT_WRITE_NOT_PERMITTED         : return "GATT_WRITE_NOT_PERMITTED";         // 3
+            case 0x04                                           : return "GATT_INVALID_PDU";                 // 4
+            case BluetoothGatt.GATT_INSUFFICIENT_AUTHENTICATION : return "GATT_INSUFFICIENT_AUTHENTICATION"; // 5
+            case BluetoothGatt.GATT_REQUEST_NOT_SUPPORTED       : return "GATT_REQUEST_NOT_SUPPORTED";       // 6
+            case BluetoothGatt.GATT_INVALID_OFFSET              : return "GATT_INVALID_OFFSET";              // 7
+            case BluetoothGatt.GATT_INSUFFICIENT_AUTHORIZATION  : return "GATT_INSUFFICIENT_AUTHORIZATION";  // 8
+            case 0x09                                           : return "GATT_PREPARE_QUEUE_FULL";          // 9
+            case 0x0a                                           : return "GATT_ATTR_NOT_FOUND";              // 10
+            case 0x0b                                           : return "GATT_ATTR_NOT_LONG";               // 11
+            case 0x0c                                           : return "GATT_INSUFFICIENT_KEY_SIZE";       // 12
+            case BluetoothGatt.GATT_INVALID_ATTRIBUTE_LENGTH    : return "GATT_INVALID_ATTRIBUTE_LENGTH";    // 13
+            case 0x0e                                           : return "GATT_UNLIKELY";                    // 14
+            case BluetoothGatt.GATT_INSUFFICIENT_ENCRYPTION     : return "GATT_INSUFFICIENT_ENCRYPTION";     // 15
+            case 0x10                                           : return "GATT_UNSUPPORTED_GROUP";           // 16
+            case 0x11                                           : return "GATT_INSUFFICIENT_RESOURCES";      // 17
+            case BluetoothGatt.GATT_CONNECTION_CONGESTED        : return "GATT_CONNECTION_CONGESTED";        // 143
+            case BluetoothGatt.GATT_FAILURE                     : return "GATT_FAILURE";                     // 257
             default: return "UNKNOWN_GATT_ERROR (" + value + ")";
         }
     }

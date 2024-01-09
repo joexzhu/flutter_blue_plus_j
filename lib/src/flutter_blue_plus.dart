@@ -27,7 +27,8 @@ class FlutterBluePlus {
   static final Map<DeviceIdentifier, String> _advNames = {};
   static final Map<DeviceIdentifier, Map<String, List<int>>> _lastChrs = {};
   static final Map<DeviceIdentifier, Map<String, List<int>>> _lastDescs = {};
-  static final Map<DeviceIdentifier, List<StreamSubscription>> _subscriptions = {};
+  static final Map<DeviceIdentifier, List<StreamSubscription>> _deviceSubscriptions = {};
+  static final List<StreamSubscription> _scanSubscriptions = [];
   static final Set<DeviceIdentifier> _autoConnect = {};
 
   /// stream used for the isScanning public api
@@ -36,7 +37,10 @@ class FlutterBluePlus {
   /// stream used for the scanResults public api
   static final _scanResults = _StreamControllerReEmit<List<ScanResult>>(initialValue: []);
 
-  /// the subscription to the scan results stream
+  /// buffers the scan results
+  static _BufferStream<BmScanResponse>? _scanBuffer;
+
+  /// the subscription to the merged scan results stream
   static StreamSubscription<BmScanResponse?>? _scanSubscription;
 
   /// timeout for scanning that can be cancelled by stopScan
@@ -57,6 +61,10 @@ class FlutterBluePlus {
 
   /// Checks whether the hardware supports Bluetooth
   static Future<bool> get isSupported async => await _invokeMethod('isSupported');
+
+  /// The current adapter state
+  static BluetoothAdapterState get adapterStateNow =>
+      _adapterStateNow != null ? _bmToAdapterState(_adapterStateNow!) : BluetoothAdapterState.unknown;
 
   /// Return the friendly Bluetooth name of the local Bluetooth adapter
   static Future<String> get adapterName async => await _invokeMethod('getAdapterName');
@@ -120,37 +128,22 @@ class FlutterBluePlus {
 
   /// Gets the current state of the Bluetooth module
   static Stream<BluetoothAdapterState> get adapterState async* {
-    // already have the initial value?
-    if (_adapterStateNow != null) {
-      yield* FlutterBluePlus._methodStream.stream
-          .where((m) => m.method == "OnAdapterStateChanged")
-          .map((m) => m.arguments)
-          .map((args) => BmBluetoothAdapterState.fromMap(args))
-          .map((s) => _bmToAdapterState(s.adapterState))
-          .newStreamWithInitialValue(_bmToAdapterState(_adapterStateNow!));
-    } else {
-      // start listening now so we do not miss any
-      // changes while we get the initial value
-      var buffer = _BufferStream.listen(FlutterBluePlus._methodStream.stream
-          .where((m) => m.method == "OnAdapterStateChanged")
-          .map((m) => m.arguments)
-          .map((args) => BmBluetoothAdapterState.fromMap(args))
-          .map((s) => _bmToAdapterState(s.adapterState)));
-
-      // initial state
-      BluetoothAdapterState initialValue = await _invokeMethod('getAdapterState')
-          .then((args) => BmBluetoothAdapterState.fromMap(args))
-          .then((s) => _bmToAdapterState(s.adapterState));
-
-      // make sure the initial value has not become out of date
-      // while we were awaiting for the initial state
-      if (buffer.hasReceivedValue == false) {
-        yield initialValue;
+    // get current state if needed
+    if (_adapterStateNow == null) {
+      BmAdapterStateEnum val =
+          await _invokeMethod('getAdapterState').then((args) => BmBluetoothAdapterState.fromMap(args).adapterState);
+      // update _adapterStateNow if it is still null after the await
+      if (_adapterStateNow == null) {
+        _adapterStateNow = val;
       }
-
-      // stream
-      yield* buffer.stream;
     }
+
+    yield* FlutterBluePlus._methodStream.stream
+        .where((m) => m.method == "OnAdapterStateChanged")
+        .map((m) => m.arguments)
+        .map((args) => BmBluetoothAdapterState.fromMap(args))
+        .map((s) => _bmToAdapterState(s.adapterState))
+        .newStreamWithInitialValue(_bmToAdapterState(_adapterStateNow!));
   }
 
   /// Retrieve a list of devices currently connected to your app
@@ -190,6 +183,8 @@ class FlutterBluePlus {
   }
 
   /// Start a scan, and return a stream of results
+  /// Note: scan filters use an "or" behavior. i.e. if you set `withServices` & `withNames` we
+  /// return all the advertisments that match any of the specified services *or* any of the specified names.
   ///   - [withServices] filter by advertised services
   ///   - [withRemoteIds] filter for known remoteIds (iOS: 128-bit guid, android: 48-bit mac address)
   ///   - [withNames] filter by advertised names (exact match)
@@ -199,7 +194,7 @@ class FlutterBluePlus {
   ///   - [timeout] calls stopScan after a specified duration
   ///   - [removeIfGone] if true, remove devices after they've stopped advertising for X duration
   ///   - [continuousUpdates] If `true`, we continually update 'lastSeen' & 'rssi' by processing
-  ///        duplicate advertisements. This takes more power.
+  ///        duplicate advertisements. This takes more power. You typically should not use this option.
   ///   - [continuousDivisor] Useful to help performance. If divisor is 3, then two-thirds of advertisements are
   ///        ignored, and one-third are processed. This reduces main-thread usage caused by the platform channel.
   ///        The scan counting is per-device so you always get the 1st advertisement from each device.
@@ -229,6 +224,18 @@ class FlutterBluePlus {
     assert(removeIfGone == null || !oneByOne, "removeIfGone is not compatible with oneByOne");
     assert(continuousDivisor >= 1, "divisor must be >= 1");
 
+    // Note: `withKeywords` is not yet compatible with other filters on android.
+    // Why? `withKeywords` is implemented in custom fbp code. If fbp wanted to support
+    // `withKeywords` & other filters at the same time, fbp would need to re-implement all
+    // filtering in custom code and skip android OS filtering entirely, hurting perf.
+    bool other = withServices.isNotEmpty ||
+        withRemoteIds.isNotEmpty ||
+        withNames.isNotEmpty ||
+        withMsd.isNotEmpty ||
+        withServiceData.isNotEmpty;
+    assert(!(Platform.isAndroid && withKeywords.isNotEmpty && other),
+        "withKeywords is not compatible with other filters on Android");
+
     // already scanning?
     if (_isScanning.latestValue == true) {
       // stop existing scan
@@ -257,15 +264,15 @@ class FlutterBluePlus {
         .map((args) => BmScanResponse.fromMap(args));
 
     // Start listening now, before invokeMethod, so we do not miss any results
-    _BufferStream<BmScanResponse> _scanBuffer = _BufferStream.listen(responseStream);
+    _scanBuffer = _BufferStream.listen(responseStream);
 
     // invoke platform method
-    await _invokeMethod('startScan', settings.toMap());
+    await _invokeMethod('startScan', settings.toMap()).onError((e,s) => _stopScan(invokePlatform: false));
 
     // check every 250ms for gone devices?
     late Stream<BmScanResponse?> outputStream = removeIfGone != null
-        ? _mergeStreams([_scanBuffer.stream, Stream.periodic(Duration(milliseconds: 250))])
-        : _scanBuffer.stream;
+        ? _mergeStreams([_scanBuffer!.stream, Stream.periodic(Duration(milliseconds: 250))])
+        : _scanBuffer!.stream;
 
     // start by pushing an empty array
     _scanResults.add([]);
@@ -282,8 +289,9 @@ class FlutterBluePlus {
       } else {
         // failure?
         if (response.success == false) {
-          _scanResults
-              .addError(FlutterBluePlusException(_nativeError, "scan", response.errorCode, response.errorString));
+          var e = FlutterBluePlusException(_nativeError, "scan", response.errorCode, response.errorString);
+          _scanResults.addError(e);
+          _stopScan(invokePlatform: false);
         }
 
         // iterate through advertisements
@@ -331,14 +339,26 @@ class FlutterBluePlus {
 
   /// for internal use
   static Future<void> _stopScan({bool invokePlatform = true, bool pushToStream = true}) async {
+    _scanBuffer?.close();
     _scanSubscription?.cancel();
     _scanTimeout?.cancel();
     if (pushToStream) {
       _isScanning.add(false);
     }
+    for (var subscription in _scanSubscriptions) {
+      subscription.cancel();
+    }
     if (invokePlatform) {
       await _invokeMethod('stopScan');
     }
+  }
+
+  /// Register a subscription to be canceled when scanning is complete.
+  /// This function simplifies cleanup, to prevent creating duplicate stream subscriptions.
+  ///   - this is an optional convenience function
+  ///   - prevents accidentally creating duplicate subscriptions on scan
+  static void cancelWhenScanComplete(StreamSubscription subscription) {
+    FlutterBluePlus._scanSubscriptions.add(subscription);
   }
 
   /// Sets the internal FlutterBlue log level
@@ -402,7 +422,7 @@ class FlutterBluePlus {
       }
       if (r.adapterState == BmAdapterStateEnum.on) {
         for (DeviceIdentifier d in _autoConnect) {
-          BluetoothDevice(remoteId: d).connect(autoConnect: true);
+          BluetoothDevice(remoteId: d).connect(autoConnect: true, mtu: null);
         }
       }
     }
@@ -417,8 +437,8 @@ class FlutterBluePlus {
         // otherwise `servicesList` would be annoying to use.
         // We also don't clear the `bondState` cache for faster performance.
 
-        _subscriptions[remoteId]?.forEach((s) => s.cancel()); // cancel subscriptions
-        _subscriptions.remove(remoteId); // delete subscriptions
+        _deviceSubscriptions[remoteId]?.forEach((s) => s.cancel()); // cancel subscriptions
+        _deviceSubscriptions.remove(remoteId); // delete subscriptions
         _mtuValues.remove(remoteId); // reset known mtu
         _lastDescs.remove(remoteId); // clear lastDescs so that 'isNotifying' is reset
         _lastChrs.remove(remoteId); // for api consistency, clear characteristic values
@@ -428,7 +448,7 @@ class FlutterBluePlus {
         for (DeviceIdentifier d in _autoConnect) {
           if (Platform.isIOS || Platform.isMacOS) {
             if (_adapterStateNow == BmAdapterStateEnum.on) {
-              BluetoothDevice(remoteId: d).connect(autoConnect: true);
+              BluetoothDevice(remoteId: d).connect(autoConnect: true, mtu: null);
             }
           }
         }
