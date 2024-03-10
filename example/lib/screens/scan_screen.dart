@@ -61,9 +61,18 @@ class _ScanScreenState extends State<ScanScreen> {
     try {
       // android is slow when asking for all advertisements,
       // so instead we only ask for 1/8 of them
-      int divisor = Platform.isAndroid ? 8 : 1;
-      await FlutterBluePlus.startScan(
-          timeout: const Duration(seconds: 15), continuousUpdates: true, continuousDivisor: divisor);
+      if (FlutterBluePlus.isScanningNow == false) {
+        int divisor = Platform.isAndroid ? 8 : 1;
+        final hos = await FlutterBluePlus.isHarmonyOS();
+        print('hos:$hos');
+        await FlutterBluePlus.startScan(
+          timeout: const Duration(seconds: 15),
+          androidUsesFineLocation: false,
+          continuousUpdates: true,
+          continuousDivisor: divisor,
+          oldApi: hos,
+        );
+      }
     } catch (e) {
       Snackbar.show(ABC.b, prettyException("Start Scan Error:", e), success: false);
     }
